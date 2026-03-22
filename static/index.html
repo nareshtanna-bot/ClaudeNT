@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Travel Intelligence Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+
+  <!-- Navigation -->
+  <nav class="nav">
+    <a href="/" class="nav-brand">
+      <div class="logo">🌍</div>
+      Travel Intelligence
+    </a>
+    <div class="nav-spacer"></div>
+    <div class="nav-status">
+      <div class="status-dot" id="status-dot"></div>
+      <span id="status-text">Checking...</span>
+    </div>
+  </nav>
+
+  <!-- Layout -->
+  <div class="layout">
+
+    <!-- Sidebar: Travel Schedule -->
+    <aside class="sidebar">
+      <div class="section-label">Travel Schedule</div>
+      <div class="trip-list" id="trip-list">
+        <!-- Populated by JS -->
+      </div>
+      <div class="divider" style="margin: 8px 0;"></div>
+      <button class="btn btn-ghost btn-sm" id="add-trip-btn">
+        ＋ Add Trip
+      </button>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main">
+
+      <!-- Restaurant Recommendations Widget -->
+      <div class="widget" id="restaurant-widget">
+        <div class="widget-header">
+          <span class="widget-title">🍽️ Restaurant Recommendations</span>
+          <span class="badge">AI Agent</span>
+        </div>
+        <div class="widget-body">
+          <p style="font-size:.85rem;color:var(--text-2);margin-bottom:14px;">
+            Select a trip from your schedule, then let the agent search for the
+            best restaurants in that city.
+          </p>
+
+          <div class="agent-controls">
+            <select class="trip-selector" id="trip-selector">
+              <option value="">— Choose a trip —</option>
+            </select>
+            <button class="btn btn-primary" id="get-recs-btn" disabled>
+              <span id="btn-icon">🔍</span>
+              <span id="btn-label">Find Restaurants</span>
+            </button>
+          </div>
+
+          <div class="agent-output-wrap" id="output-wrap" style="display:none;">
+            <div class="agent-output-header">
+              <div class="agent-status-indicator">
+                <div class="thinking-dots" id="thinking-dots">
+                  <span></span><span></span><span></span>
+                </div>
+                <span id="output-status">Results</span>
+              </div>
+              <div style="flex:1;"></div>
+              <button class="btn btn-secondary btn-sm" id="copy-btn" style="display:none;">
+                Copy
+              </button>
+            </div>
+            <div class="agent-output empty" id="agent-output">
+              Waiting for recommendations…
+            </div>
+          </div>
+
+          <div id="agent-error" style="display:none;"></div>
+        </div>
+      </div>
+
+      <!-- Placeholder widget (extensible) -->
+      <div class="widget widget-placeholder">
+        <div class="placeholder-inner">
+          <div class="placeholder-icon">＋</div>
+          <div class="placeholder-label">Add a Widget</div>
+          <div class="placeholder-sub">Flight tracker, weather, packing list…</div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- Add Trip Modal -->
+  <div class="modal-backdrop" id="add-trip-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">Add Trip to Schedule</span>
+        <button class="modal-close" id="modal-close">✕</button>
+      </div>
+
+      <form id="add-trip-form" novalidate>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="input-city">City *</label>
+            <input type="text" id="input-city" placeholder="e.g. Tokyo" required />
+          </div>
+          <div class="form-group">
+            <label for="input-country">Country *</label>
+            <input type="text" id="input-country" placeholder="e.g. Japan" required />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="input-start">Arrival *</label>
+            <input type="date" id="input-start" required />
+          </div>
+          <div class="form-group">
+            <label for="input-end">Departure *</label>
+            <input type="date" id="input-end" required />
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="input-notes">Notes</label>
+          <textarea id="input-notes" placeholder="Conference, vacation, client visit…"></textarea>
+        </div>
+      </form>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
+        <button class="btn btn-primary" id="modal-save">Add Trip</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- marked.js for Markdown rendering -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

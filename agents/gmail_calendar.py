@@ -15,9 +15,11 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import os
+
 import anthropic
 
-TOKEN_FILE = Path("data/google_token.json")
+TOKEN_FILE = Path(os.getenv("DATA_DIR", "data")) / "google_token.json"
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/calendar.readonly",

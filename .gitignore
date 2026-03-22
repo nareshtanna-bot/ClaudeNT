@@ -2,6 +2,10 @@ __pycache__/
 *.pyc
 .env
 data/schedule.json
+data/projects.json
+data/google_token.json
+data/recs/
+credentials.json
 *.egg-info/
 .venv/
 dist/

@@ -11,47 +11,118 @@
 </head>
 <body>
 
-  <!-- Navigation -->
-  <nav class="nav">
-    <a href="/" class="nav-brand">
-      <div class="logo">🌍</div>
-      Travel Intelligence
-    </a>
-    <div class="nav-spacer"></div>
+<!-- ── Nav ────────────────────────────────────────────────── -->
+<nav class="nav">
+  <a href="/" class="nav-brand">
+    <div class="nav-logo">🌍</div>
+    Travel Intelligence
+  </a>
+  <div class="nav-spacer"></div>
+  <div class="nav-right">
     <div class="nav-status">
       <div class="status-dot" id="status-dot"></div>
-      <span id="status-text">Checking...</span>
+      <span id="status-text">Checking…</span>
     </div>
-  </nav>
+  </div>
+</nav>
 
-  <!-- Layout -->
-  <div class="layout">
+<!-- ── Layout ─────────────────────────────────────────────── -->
+<div class="layout">
 
-    <!-- Sidebar: Travel Schedule -->
-    <aside class="sidebar">
-      <div class="section-label">Travel Schedule</div>
-      <div class="trip-list" id="trip-list">
-        <!-- Populated by JS -->
+  <!-- Sidebar -->
+  <aside class="sidebar">
+
+    <!-- Google integration box -->
+    <div class="section-label">Google</div>
+    <div class="google-box" id="google-box">
+      <div class="google-box-title">
+        <span>📧</span> Gmail &amp; Calendar
       </div>
-      <div class="divider" style="margin: 8px 0;"></div>
-      <button class="btn btn-ghost btn-sm" id="add-trip-btn">
-        ＋ Add Trip
-      </button>
-    </aside>
+      <!-- Not connected state (default) -->
+      <div id="google-disconnected">
+        <p>Connect to auto-import trips from booking confirmations and calendar events.</p>
+        <a href="/auth/google" class="btn btn-google btn-sm" id="connect-google-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+          </svg>
+          Sign in with Google
+        </a>
+        <div style="margin-top:8px; font-size:.71rem; color:var(--t3); line-height:1.5;">
+          Requires <code>credentials.json</code> from Google Cloud Console —
+          see setup instructions below.
+        </div>
+      </div>
+      <!-- Connected state -->
+      <div id="google-connected" style="display:none;">
+        <div class="google-connected-row">
+          <span>✅</span> Google connected
+        </div>
+        <div class="google-actions">
+          <button class="btn btn-secondary btn-sm btn-full" id="gmail-import-btn">
+            📧 Import from Gmail
+          </button>
+          <button class="btn btn-secondary btn-sm btn-full" id="calendar-sync-btn">
+            📅 Sync Calendar
+          </button>
+          <button class="btn btn-danger btn-sm btn-full" id="google-disconnect-btn">
+            Disconnect
+          </button>
+        </div>
+      </div>
+    </div>
 
-    <!-- Main content -->
-    <main class="main">
+    <div class="divider"></div>
 
-      <!-- Restaurant Recommendations Widget -->
-      <div class="widget" id="restaurant-widget">
+    <!-- Travel schedule list -->
+    <div class="section-label">Travel Schedule</div>
+    <div class="trip-list" id="trip-list">
+      <!-- Populated by JS -->
+    </div>
+    <div class="divider" style="margin:8px 0;"></div>
+    <button class="btn btn-ghost btn-sm" id="add-trip-btn">＋ Add Trip</button>
+
+    <!-- Setup instructions (collapsed) -->
+    <div id="google-setup-section" style="display:none;">
+      <div class="divider"></div>
+      <div class="section-label">Google Setup</div>
+      <div style="font-size:.73rem; color:var(--t2); line-height:1.65; background:var(--bg-2); border:1px solid var(--border-s); border-radius:var(--r-md); padding:12px;">
+        <strong style="color:var(--t1);">Steps to connect Google:</strong><br>
+        1. Go to <a href="https://console.cloud.google.com" target="_blank" style="color:var(--accent);">console.cloud.google.com</a><br>
+        2. Create a project → enable Gmail API + Calendar API<br>
+        3. Create OAuth 2.0 credentials (Web App type)<br>
+        4. Add <code>http://localhost:8000/auth/google/callback</code> as redirect URI<br>
+        5. Download <code>credentials.json</code> → place in project root<br>
+        6. Restart the server, then click "Sign in with Google"
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- Main content -->
+  <main class="main">
+
+    <!-- Tab navigation -->
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="travel">✈️ Travel</button>
+      <button class="tab-btn" data-tab="home">🏠 Home Projects</button>
+    </div>
+
+    <!-- ── TRAVEL TAB ──────────────────────────────────────── -->
+    <div class="tab-panel active" id="tab-travel">
+
+      <!-- Restaurant Recommendations widget -->
+      <div class="widget">
         <div class="widget-header">
           <span class="widget-title">🍽️ Restaurant Recommendations</span>
-          <span class="badge">AI Agent</span>
+          <span class="badge">AI Agent • Yelp + Google + OpenTable</span>
         </div>
         <div class="widget-body">
-          <p style="font-size:.85rem;color:var(--text-2);margin-bottom:14px;">
-            Select a trip from your schedule, then let the agent search for the
-            best restaurants in that city.
+          <p style="font-size:.82rem;color:var(--t2);margin-bottom:14px;">
+            Healthy &amp; vegetarian-friendly picks for you and your son —
+            refreshed weekly per destination.
           </p>
 
           <div class="agent-controls">
@@ -62,89 +133,215 @@
               <span id="btn-icon">🔍</span>
               <span id="btn-label">Find Restaurants</span>
             </button>
+            <button class="btn btn-secondary btn-sm" id="force-refresh-btn" style="display:none;" title="Force a fresh search">
+              ↺ Refresh
+            </button>
           </div>
 
+          <div class="rec-meta" id="rec-meta" style="display:none;"></div>
+
           <div class="agent-output-wrap" id="output-wrap" style="display:none;">
-            <div class="agent-output-header">
-              <div class="agent-status-indicator">
-                <div class="thinking-dots" id="thinking-dots">
-                  <span></span><span></span><span></span>
-                </div>
-                <span id="output-status">Results</span>
+            <div class="output-header">
+              <div class="thinking-dots" id="thinking-dots">
+                <span></span><span></span><span></span>
               </div>
+              <span id="output-status">Results</span>
               <div style="flex:1;"></div>
-              <button class="btn btn-secondary btn-sm" id="copy-btn" style="display:none;">
-                Copy
-              </button>
+              <button class="btn btn-secondary btn-xs" id="copy-btn" style="display:none;">Copy</button>
             </div>
-            <div class="agent-output empty" id="agent-output">
-              Waiting for recommendations…
-            </div>
+            <div class="agent-output empty" id="agent-output">Waiting…</div>
           </div>
 
           <div id="agent-error" style="display:none;"></div>
         </div>
       </div>
 
-      <!-- Placeholder widget (extensible) -->
+      <!-- Placeholder for future travel widget -->
       <div class="widget widget-placeholder">
         <div class="placeholder-inner">
           <div class="placeholder-icon">＋</div>
           <div class="placeholder-label">Add a Widget</div>
-          <div class="placeholder-sub">Flight tracker, weather, packing list…</div>
+          <div class="placeholder-sub">Flight tracker, packing list, weather, itinerary…</div>
         </div>
       </div>
 
-    </main>
-  </div>
+    </div><!-- /travel tab -->
 
-  <!-- Add Trip Modal -->
-  <div class="modal-backdrop" id="add-trip-modal">
-    <div class="modal">
-      <div class="modal-header">
-        <span class="modal-title">Add Trip to Schedule</span>
-        <button class="modal-close" id="modal-close">✕</button>
+    <!-- ── HOME PROJECTS TAB ───────────────────────────────── -->
+    <div class="tab-panel" id="tab-home">
+
+      <div class="widget">
+        <div class="widget-header">
+          <span class="widget-title">🏠 Home Projects</span>
+          <button class="btn btn-primary btn-sm" id="add-project-btn">＋ Add Project</button>
+        </div>
+        <div class="widget-body">
+
+          <!-- Budget summary cards -->
+          <div class="budget-summary" id="budget-summary">
+            <div class="budget-card">
+              <div class="budget-card-label">Total Estimated</div>
+              <div class="budget-card-value" id="budget-estimated">$0</div>
+            </div>
+            <div class="budget-card">
+              <div class="budget-card-label">Total Actual</div>
+              <div class="budget-card-value" id="budget-actual">$0</div>
+            </div>
+            <div class="budget-card">
+              <div class="budget-card-label">Remaining Budget</div>
+              <div class="budget-card-value" id="budget-remaining">$0</div>
+            </div>
+          </div>
+
+          <!-- Projects list -->
+          <div class="project-list" id="project-list">
+            <!-- Populated by JS -->
+          </div>
+
+          <!-- AI Estimator placeholder -->
+          <div class="ai-estimator-slot" style="margin-top:18px;">
+            <div class="slot-icon">🤖</div>
+            <div class="slot-label">AI Cost Estimator</div>
+            <div class="slot-sub">Coming soon — describe a project, get an AI-generated cost range and breakdown</div>
+          </div>
+
+        </div>
       </div>
 
-      <form id="add-trip-form" novalidate>
-        <div class="form-row">
-          <div class="form-group">
-            <label for="input-city">City *</label>
-            <input type="text" id="input-city" placeholder="e.g. Tokyo" required />
-          </div>
-          <div class="form-group">
-            <label for="input-country">Country *</label>
-            <input type="text" id="input-country" placeholder="e.g. Japan" required />
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label for="input-start">Arrival *</label>
-            <input type="date" id="input-start" required />
-          </div>
-          <div class="form-group">
-            <label for="input-end">Departure *</label>
-            <input type="date" id="input-end" required />
-          </div>
+    </div><!-- /home tab -->
+
+  </main>
+</div>
+
+<!-- ── Add Trip Modal ──────────────────────────────────────── -->
+<div class="modal-backdrop" id="add-trip-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Add Trip</span>
+      <button class="modal-close" data-close="add-trip-modal">✕</button>
+    </div>
+    <form id="add-trip-form" novalidate>
+      <div class="form-row">
+        <div class="form-group">
+          <label>City *</label>
+          <input type="text" id="trip-city" placeholder="Tokyo" required />
         </div>
         <div class="form-group">
-          <label for="input-notes">Notes</label>
-          <textarea id="input-notes" placeholder="Conference, vacation, client visit…"></textarea>
+          <label>Country *</label>
+          <input type="text" id="trip-country" placeholder="Japan" required />
         </div>
-      </form>
-
-      <div class="modal-footer">
-        <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
-        <button class="btn btn-primary" id="modal-save">Add Trip</button>
       </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Arrival *</label>
+          <input type="date" id="trip-start" required />
+        </div>
+        <div class="form-group">
+          <label>Departure *</label>
+          <input type="date" id="trip-end" required />
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea id="trip-notes" placeholder="Conference, vacation, client visit…"></textarea>
+      </div>
+    </form>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-close="add-trip-modal">Cancel</button>
+      <button class="btn btn-primary" id="trip-save-btn">Add Trip</button>
     </div>
   </div>
+</div>
 
-  <!-- Toast container -->
-  <div class="toast-container" id="toast-container"></div>
+<!-- ── Add/Edit Project Modal ─────────────────────────────── -->
+<div class="modal-backdrop" id="project-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="project-modal-title">Add Project</span>
+      <button class="modal-close" data-close="project-modal">✕</button>
+    </div>
+    <form id="project-form" novalidate>
+      <input type="hidden" id="project-id" />
+      <div class="form-group">
+        <label>Project Name *</label>
+        <input type="text" id="project-name" placeholder="Kitchen renovation" required />
+      </div>
+      <div class="form-group">
+        <label>Description</label>
+        <textarea id="project-desc" placeholder="Replace cabinets, countertops, and appliances…"></textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Priority</label>
+          <select class="form-select" id="project-priority">
+            <option value="high">🔴 High</option>
+            <option value="medium" selected>🟡 Medium</option>
+            <option value="low">⚪ Low</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Status</label>
+          <select class="form-select" id="project-status">
+            <option value="planning" selected>Planning</option>
+            <option value="in_progress">In Progress</option>
+            <option value="completed">Completed</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Estimated Cost ($)</label>
+          <input type="number" id="project-estimated" placeholder="15000" min="0" step="100" />
+        </div>
+        <div class="form-group">
+          <label>Actual Cost ($)</label>
+          <input type="number" id="project-actual" placeholder="—" min="0" step="100" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea id="project-notes" placeholder="Contractor quotes, timeline notes…"></textarea>
+      </div>
+    </form>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-close="project-modal">Cancel</button>
+      <button class="btn btn-primary" id="project-save-btn">Save Project</button>
+    </div>
+  </div>
+</div>
 
-  <!-- marked.js for Markdown rendering -->
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="/static/app.js"></script>
+<!-- ── Gmail Import Modal ──────────────────────────────────── -->
+<div class="modal-backdrop" id="import-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Import Trips from Gmail</span>
+      <button class="modal-close" data-close="import-modal">✕</button>
+    </div>
+    <div id="import-content">
+      <p style="font-size:.85rem;color:var(--t2);margin-bottom:14px;">
+        Scanning your last 6 months of email for travel booking confirmations…
+      </p>
+      <div style="text-align:center;padding:20px;color:var(--t2);font-size:.85rem;" id="import-loading">
+        <div class="thinking-dots active" style="justify-content:center;margin-bottom:10px;">
+          <span></span><span></span><span></span>
+        </div>
+        Searching Gmail…
+      </div>
+      <div id="import-list-wrap" style="display:none;">
+        <div class="import-list" id="import-list"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-close="import-modal">Close</button>
+      <button class="btn btn-primary" id="import-add-all-btn" style="display:none;">Add Selected</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toast-container"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="/static/app.js"></script>
 </body>
 </html>

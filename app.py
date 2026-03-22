@@ -21,13 +21,16 @@ from pydantic import BaseModel
 
 load_dotenv()
 
-# ── Paths ─────────────────────────────────────────────────────────────────
-DATA_DIR       = Path("data")
+# ── Paths (DATA_DIR env var lets cloud deployments use writable storage) ──
+DATA_DIR       = Path(os.getenv("DATA_DIR", "data"))
 SCHEDULE_FILE  = DATA_DIR / "schedule.json"
 PROJECTS_FILE  = DATA_DIR / "projects.json"
 RECS_DIR       = DATA_DIR / "recs"
 TOKEN_FILE     = DATA_DIR / "google_token.json"
 CREDS_FILE     = Path("credentials.json")
+
+# ── Base URL (used for Google OAuth redirect — set to your public domain) ─
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8000").rstrip("/")
 
 # ── OAuth state store (in-memory, single-user local app) ──────────────────
 _oauth_states: dict[str, datetime] = {}
@@ -331,7 +334,7 @@ def _build_flow(state: str | None = None):
         scopes=GOOGLE_SCOPES,
         state=state,
     )
-    flow.redirect_uri = "http://localhost:8000/auth/google/callback"
+    flow.redirect_uri = f"{BASE_URL}/auth/google/callback"
     return flow
 
 
@@ -397,7 +400,13 @@ if __name__ == "__main__":
     import threading
     import uvicorn
 
-    threading.Timer(1.5, lambda: webbrowser.open("http://localhost:8000")).start()
-    print("\n🌍  Travel Intelligence Dashboard starting…")
-    print("   Open: http://localhost:8000\n")
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=False)
+    port = int(os.getenv("PORT", 8000))
+    url  = f"http://localhost:{port}"
+
+    # Only open a browser when running locally (Render sets the PORT env var)
+    if not os.getenv("RENDER"):
+        threading.Timer(1.5, lambda: webbrowser.open(url)).start()
+
+    print(f"\n🌍  Travel Intelligence Dashboard starting…")
+    print(f"   Open: {url}\n")
+    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=False)

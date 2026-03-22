@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: travel-intelligence
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false          # You set this in the Render dashboard
+      - key: DATA_DIR
+        value: /tmp/dashboard-data
+      - key: BASE_URL
+        sync: false          # Set to your Render URL after first deploy
+                             # e.g. https://travel-intelligence.onrender.com

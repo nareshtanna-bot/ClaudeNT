@@ -60,7 +60,7 @@ End with a short **"My picks for a first night"** section suggesting the single 
 
     while True:
         async with client.messages.stream(
-            model="claude-opus-4-6",
+            model="claude-haiku-4-5",
             max_tokens=5000,
             tools=[{"type": "web_search_20260209", "name": "web_search"}],
             messages=messages,

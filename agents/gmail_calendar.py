@@ -101,7 +101,7 @@ If the email does NOT contain a travel booking, return:
 Return ONLY the JSON object, no other text."""
 
     response = client.messages.create(
-        model="claude-opus-4-6",
+        model="claude-haiku-4-5",
         max_tokens=512,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -274,7 +274,7 @@ def _extract_city_from_location(location: str) -> dict | None:
 
     client = anthropic.Anthropic()
     response = client.messages.create(
-        model="claude-opus-4-6",
+        model="claude-haiku-4-5",
         max_tokens=128,
         messages=[{
             "role": "user",

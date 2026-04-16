@@ -1,0 +1,6 @@
+.env
+__pycache__/
+*.pyc
+*.pptx
+data/
+credentials.json

@@ -27,7 +27,16 @@ SCHEDULE_FILE  = DATA_DIR / "schedule.json"
 PROJECTS_FILE  = DATA_DIR / "projects.json"
 RECS_DIR       = DATA_DIR / "recs"
 TOKEN_FILE     = DATA_DIR / "google_token.json"
+FAMILY_FILE    = DATA_DIR / "family.json"
+EMAIL_LOG_FILE = DATA_DIR / "email_log.json"
 CREDS_FILE     = Path("credentials.json")
+
+DEFAULT_FAMILY = [
+    {"name": "Naresh",   "email": "nareshtanna@gmail.com"},
+    {"name": "Renuka",   "email": "renukaati1@gmail.com"},
+    {"name": "Shaan",    "email": "shaanatitanna@gmail.com"},
+    {"name": "Nishanth", "email": "nishanthatitanna@gmail.com"},
+]
 
 # ── Base URL (used for Google OAuth redirect — set to your public domain) ─
 BASE_URL = os.getenv("BASE_URL", "http://localhost:8000").rstrip("/")
@@ -50,6 +59,21 @@ def load_projects() -> list:
 def save_projects(p: list) -> None:
     PROJECTS_FILE.parent.mkdir(parents=True, exist_ok=True)
     PROJECTS_FILE.write_text(json.dumps(p, indent=2))
+
+# ── Data helpers — family + email log ────────────────────────────────────
+def load_family() -> list:
+    return json.loads(FAMILY_FILE.read_text()) if FAMILY_FILE.exists() else DEFAULT_FAMILY[:]
+
+def save_family(f: list) -> None:
+    FAMILY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    FAMILY_FILE.write_text(json.dumps(f, indent=2))
+
+def load_email_log() -> dict:
+    return json.loads(EMAIL_LOG_FILE.read_text()) if EMAIL_LOG_FILE.exists() else {}
+
+def save_email_log(log: dict) -> None:
+    EMAIL_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    EMAIL_LOG_FILE.write_text(json.dumps(log, indent=2))
 
 # ── Data helpers — recommendation cache ──────────────────────────────────
 def load_rec(trip_id: str) -> dict | None:
@@ -101,14 +125,64 @@ async def _refresh_silent(trip: dict) -> None:
         print(f"[refresh] Failed for {trip['city']}: {e}")
 
 
+# ── Background daily email checker ───────────────────────────────────────
+async def daily_email_checker():
+    """Every 6 hours, send pre-trip briefing emails ~7 days before departure."""
+    await asyncio.sleep(120)
+    while True:
+        try:
+            if TOKEN_FILE.exists():
+                await _check_and_send_briefs()
+        except Exception as e:
+            print(f"[email-checker] {e}")
+        await asyncio.sleep(6 * 3600)
+
+
+async def _check_and_send_briefs():
+    from agents.travel_brief import generate_travel_brief
+    from agents.email_sender import send_travel_brief as _send
+
+    today      = datetime.now().date()
+    email_log  = load_email_log()
+    recipients = [m["email"] for m in load_family()]
+    if not recipients:
+        return
+
+    for trip in load_schedule():
+        trip_id = trip["id"]
+        try:
+            start = datetime.strptime(trip["start_date"], "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        days_until = (start - today).days
+        if not (6 <= days_until <= 8) or trip_id in email_log:
+            continue
+
+        try:
+            rec = load_rec(trip_id)
+            brief = await generate_travel_brief(trip, rec["content"] if rec else None)
+            subject = f"✈️ {trip['city']} in {days_until} days — Packing List & Restaurant Picks"
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, _send, recipients, subject, brief["html_email"])
+            email_log[trip_id] = datetime.now().isoformat()
+            save_email_log(email_log)
+            print(f"[email-checker] Sent brief for {trip['city']} to {len(recipients)} recipients")
+        except Exception as e:
+            print(f"[email-checker] Failed for {trip['city']}: {e}")
+
+
 # ── Lifespan ──────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     DATA_DIR.mkdir(exist_ok=True)
     RECS_DIR.mkdir(parents=True, exist_ok=True)
-    task = asyncio.create_task(weekly_refresh_checker())
+    if not FAMILY_FILE.exists():
+        save_family(DEFAULT_FAMILY)
+    task1 = asyncio.create_task(weekly_refresh_checker())
+    task2 = asyncio.create_task(daily_email_checker())
     yield
-    task.cancel()
+    task1.cancel()
+    task2.cancel()
 
 
 app = FastAPI(title="Travel Intelligence Dashboard", lifespan=lifespan)
@@ -136,6 +210,11 @@ class ProjectCreate(BaseModel):
 
 class ProjectUpdate(ProjectCreate):
     pass
+
+
+class FamilyMember(BaseModel):
+    name: str
+    email: str
 
 
 # ── Root ──────────────────────────────────────────────────────────────────
@@ -320,9 +399,68 @@ async def delete_project(proj_id: str):
     return {"status": "deleted"}
 
 
+# ── Family emails ─────────────────────────────────────────────────────────
+@app.get("/api/family")
+async def get_family():
+    return load_family()
+
+
+@app.put("/api/family")
+async def update_family(members: list[FamilyMember]):
+    data = [{"name": m.name, "email": m.email} for m in members]
+    save_family(data)
+    return data
+
+
+# ── Email log ─────────────────────────────────────────────────────────────
+@app.get("/api/email-log")
+async def get_email_log():
+    return load_email_log()
+
+
+# ── Manual send trip brief ────────────────────────────────────────────────
+@app.post("/api/trips/{trip_id}/send-brief")
+async def send_brief(trip_id: str):
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        raise HTTPException(500, "ANTHROPIC_API_KEY is not set")
+    if not TOKEN_FILE.exists():
+        raise HTTPException(401, "Google not connected — needed to send emails")
+
+    schedule = load_schedule()
+    trip = next((t for t in schedule if t["id"] == trip_id), None)
+    if not trip:
+        raise HTTPException(404, "Trip not found")
+
+    recipients = [m["email"] for m in load_family()]
+    if not recipients:
+        raise HTTPException(400, "No family emails configured")
+
+    from agents.travel_brief import generate_travel_brief
+    from agents.email_sender import send_travel_brief as _send
+
+    rec = load_rec(trip_id)
+    brief = await generate_travel_brief(trip, rec["content"] if rec else None)
+
+    days_until = (datetime.strptime(trip["start_date"], "%Y-%m-%d").date() - datetime.now().date()).days
+    if days_until > 0:
+        subject = f"✈️ {trip['city']} in {days_until} days — Packing List & Restaurant Picks"
+    else:
+        subject = f"✈️ {trip['city']} Trip Brief — Packing List & Restaurant Picks"
+
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _send, recipients, subject, brief["html_email"])
+
+    email_log = load_email_log()
+    email_log[trip_id] = datetime.now().isoformat()
+    save_email_log(email_log)
+
+    return {"status": "sent", "recipients": len(recipients)}
+
+
 # ── Google OAuth ──────────────────────────────────────────────────────────
 GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/calendar.readonly",
 ]
 

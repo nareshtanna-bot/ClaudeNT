@@ -5,12 +5,15 @@ if (typeof marked !== 'undefined') {
 }
 
 /* ── State ──────────────────────────────────────────────────── */
-let trips    = [];
-let projects = [];
-let streaming = false;
-let activeES  = null;
-let rawMd     = '';
-let importCandidates = [];   // trips from Gmail/Calendar
+let trips           = [];
+let projects        = [];
+let family          = [];
+let emailLog        = {};
+let currentTripIdx  = -1;
+let streaming       = false;
+let activeES        = null;
+let rawMd           = '';
+let importCandidates = [];
 
 /* ── DOM ────────────────────────────────────────────────────── */
 const $ = id => document.getElementById(id);
@@ -36,6 +39,7 @@ function esc(s) {
 }
 
 function fmtDate(d) {
+  if (!d) return '';
   const [y,m,day] = d.split('-');
   return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m-1]} ${+day}, ${y}`;
 }
@@ -53,6 +57,13 @@ function showToast(msg, type = 'info') {
   setTimeout(() => el.remove(), 3500);
 }
 
+function daysUntil(dateStr) {
+  if (!dateStr) return null;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const d     = new Date(dateStr + 'T00:00:00');
+  return Math.round((d - today) / 86400000);
+}
+
 /* ── Health ─────────────────────────────────────────────────── */
 async function checkHealth() {
   try {
@@ -66,7 +77,6 @@ async function checkHealth() {
       dot.className = 'status-dot err';
       text.textContent = 'No API key';
     }
-    // Google state
     if (d.google_connected) {
       $('google-disconnected').style.display = 'none';
       $('google-connected').style.display    = '';
@@ -77,7 +87,7 @@ async function checkHealth() {
       $('google-setup-section').style.display = d.google_credentials_present ? 'none' : '';
     }
   } catch {
-    $('status-dot').className  = 'status-dot err';
+    $('status-dot').className   = 'status-dot err';
     $('status-text').textContent = 'Offline';
   }
 }
@@ -93,51 +103,186 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 });
 
 /* ── Modal helpers ──────────────────────────────────────────── */
-function openModal(id) {
-  $(id).classList.add('open');
-}
-function closeModal(id) {
-  $(id).classList.remove('open');
-}
+function openModal(id)  { $(id).classList.add('open'); }
+function closeModal(id) { $(id).classList.remove('open'); }
 
 document.querySelectorAll('[data-close]').forEach(btn => {
   btn.addEventListener('click', () => closeModal(btn.dataset.close));
 });
-
 document.querySelectorAll('.modal-backdrop').forEach(bd => {
-  bd.addEventListener('click', e => {
-    if (e.target === bd) closeModal(bd.id);
-  });
+  bd.addEventListener('click', e => { if (e.target === bd) closeModal(bd.id); });
 });
-
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') {
+  if (e.key === 'Escape')
     document.querySelectorAll('.modal-backdrop.open').forEach(bd => closeModal(bd.id));
-  }
 });
 
 /* ══════════════════════════════════════════════════════════════
-   TRAVEL SCHEDULE
+   TRIP HERO — auto-selects the next upcoming trip
+══════════════════════════════════════════════════════════════ */
+
+function sortedUpcoming() {
+  const today = new Date().toISOString().slice(0,10);
+  return [...trips].sort((a,b) => a.start_date.localeCompare(b.start_date));
+}
+
+function autoSelectNextTrip() {
+  if (!trips.length) { currentTripIdx = -1; renderHero(); return; }
+  const today  = new Date().toISOString().slice(0,10);
+  const sorted = sortedUpcoming();
+  // Prefer trips that haven't ended yet
+  let idx = sorted.findIndex(t => t.end_date >= today);
+  if (idx === -1) idx = sorted.length - 1;  // fall back to last trip
+  currentTripIdx = idx;
+  renderHero();
+  autoLoadRecs();
+}
+
+async function renderHero() {
+  const sorted = sortedUpcoming();
+
+  $('prev-trip-btn').disabled = currentTripIdx <= 0;
+  $('next-trip-btn').disabled = currentTripIdx < 0 || currentTripIdx >= sorted.length - 1;
+
+  if (currentTripIdx < 0 || !sorted.length) {
+    $('hero-city').textContent    = 'Your Next Trip';
+    $('hero-country').textContent = 'Add trips in the sidebar to get started';
+    $('hero-info').style.display    = 'none';
+    $('hero-actions').style.display = 'none';
+    $('output-wrap').style.display  = 'none';
+    $('agent-error').style.display  = 'none';
+    return;
+  }
+
+  const trip    = sorted[currentTripIdx];
+  const days    = daysUntil(trip.start_date);
+  const daysEnd = daysUntil(trip.end_date);
+
+  $('hero-city').textContent    = trip.city;
+  $('hero-country').textContent = trip.country;
+  $('hero-dates').textContent   = `${fmtDate(trip.start_date)} – ${fmtDate(trip.end_date)}`;
+
+  // Countdown pill
+  const cdEl = $('hero-countdown');
+  if (days > 0) {
+    cdEl.className   = 'hero-pill pill-upcoming';
+    cdEl.textContent = `${days} day${days !== 1 ? 's' : ''} away`;
+  } else if (daysEnd >= 0) {
+    cdEl.className   = 'hero-pill pill-now';
+    cdEl.textContent = 'In progress';
+  } else {
+    cdEl.className   = 'hero-pill pill-past';
+    cdEl.textContent = 'Past';
+  }
+
+  $('hero-info').style.display    = 'flex';
+  $('hero-actions').style.display = 'flex';
+  $('get-recs-btn').disabled      = false;
+
+  // Rec cache status
+  try {
+    const s = await api('GET', `/api/recommendations/${trip.id}/status`);
+    const recBadge = $('hero-rec-badge');
+    if (s.has_cache) {
+      recBadge.className   = `hero-pill ${s.needs_refresh ? 'pill-stale' : 'pill-fresh'}`;
+      recBadge.textContent = s.needs_refresh
+        ? `⚠ Recs ${s.age_days}d old`
+        : `✓ Recs ${s.age_days === 0 ? 'fresh' : s.age_days + 'd ago'}`;
+      $('force-refresh-btn').style.display = '';
+      const meta = $('rec-meta');
+      meta.className   = `rec-meta ${s.needs_refresh ? 'stale' : 'fresh'}`;
+      meta.textContent = s.needs_refresh
+        ? `⚠ Recommendations are ${s.age_days} days old`
+        : `✓ Refreshed ${s.age_days === 0 ? 'today' : s.age_days + 'd ago'}`;
+      meta.style.display = 'flex';
+    } else {
+      $('hero-rec-badge').textContent = '';
+      $('hero-rec-badge').className   = '';
+      $('rec-meta').style.display     = 'none';
+      $('force-refresh-btn').style.display = 'none';
+    }
+  } catch { /* ignore */ }
+
+  // Email log status
+  const emailBadge = $('hero-email-badge');
+  if (emailLog[trip.id]) {
+    const sentDate = new Date(emailLog[trip.id]);
+    const daysAgo  = Math.floor((Date.now() - sentDate) / 86400000);
+    emailBadge.className   = 'hero-pill pill-email';
+    emailBadge.textContent = `✉ Brief sent${daysAgo === 0 ? ' today' : ` ${daysAgo}d ago`}`;
+  } else if (days !== null && days > 0 && days <= 8) {
+    emailBadge.className   = 'hero-pill pill-email-soon';
+    emailBadge.textContent = '✉ Brief sends in ' + (days - 7 <= 0 ? 'soon' : `${days - 7}d`);
+  } else {
+    emailBadge.textContent = '';
+    emailBadge.className   = '';
+  }
+
+  // Show send brief button if Google is connected
+  const googleConnected = $('google-connected').style.display !== 'none';
+  $('send-brief-btn').style.display = googleConnected ? '' : 'none';
+}
+
+async function autoLoadRecs() {
+  const sorted = sortedUpcoming();
+  if (currentTripIdx < 0 || !sorted.length) return;
+  const trip = sorted[currentTripIdx];
+
+  try {
+    const s = await api('GET', `/api/recommendations/${trip.id}/status`);
+    if (s.has_cache && !s.needs_refresh) {
+      // Cache is fresh — stream it immediately
+      getRecommendations(false);
+    }
+  } catch { /* ignore */ }
+}
+
+/* ── Trip navigation ────────────────────────────────────────── */
+$('prev-trip-btn').addEventListener('click', () => {
+  if (currentTripIdx > 0) {
+    currentTripIdx--;
+    clearOutput();
+    renderHero();
+    autoLoadRecs();
+  }
+});
+
+$('next-trip-btn').addEventListener('click', () => {
+  const sorted = sortedUpcoming();
+  if (currentTripIdx < sorted.length - 1) {
+    currentTripIdx++;
+    clearOutput();
+    renderHero();
+    autoLoadRecs();
+  }
+});
+
+function clearOutput() {
+  if (activeES) { activeES.close(); activeES = null; }
+  streaming = false;
+  rawMd = '';
+  $('output-wrap').style.display  = 'none';
+  $('agent-error').style.display  = 'none';
+  $('copy-btn').style.display     = 'none';
+  $('btn-icon').textContent        = '🔍';
+  $('btn-label').textContent       = 'Find Restaurants';
+  $('thinking-dots').classList.remove('active');
+}
+
+/* ══════════════════════════════════════════════════════════════
+   TRAVEL SCHEDULE SIDEBAR
 ══════════════════════════════════════════════════════════════ */
 
 function tripStatus(trip) {
   const today = new Date().toISOString().slice(0,10);
-  if (today >= trip.start_date && today <= trip.end_date) return {label:'Now',      cls:'now'};
-  if (trip.start_date > today)                            return {label:'Upcoming', cls:'upcoming'};
-  return                                                         {label:'Past',     cls:'past'};
-}
-
-async function loadTripRecStatus(trip) {
-  try {
-    return await api('GET', `/api/recommendations/${trip.id}/status`);
-  } catch { return null; }
+  if (today >= trip.start_date && today <= trip.end_date) return { label:'Now',      cls:'now' };
+  if (trip.start_date > today)                            return { label:'Upcoming', cls:'upcoming' };
+  return                                                         { label:'Past',     cls:'past' };
 }
 
 function renderTripList() {
   const list = $('trip-list');
-  const sel  = $('trip-selector');
   list.innerHTML = '';
-  sel.innerHTML  = '<option value="">— Choose a trip —</option>';
 
   if (!trips.length) {
     list.innerHTML = `
@@ -147,49 +292,46 @@ function renderTripList() {
     return;
   }
 
-  [...trips]
-    .sort((a,b) => a.start_date.localeCompare(b.start_date))
-    .forEach(async trip => {
-      const { label, cls } = tripStatus(trip);
+  sortedUpcoming().forEach((trip, idx) => {
+    const { label, cls } = tripStatus(trip);
+    const isSelected     = idx === currentTripIdx;
 
-      const card = document.createElement('div');
-      card.className = 'trip-card';
-      card.dataset.id = trip.id;
-      card.innerHTML = `
-        <div class="trip-card-city">${esc(trip.city)}</div>
-        <div class="trip-card-country">${esc(trip.country)}</div>
-        <div class="trip-card-dates">${fmtDate(trip.start_date)} – ${fmtDate(trip.end_date)}</div>
-        <span class="trip-badge ${cls}">${label}</span>
-        <div class="rec-age" id="rec-age-${trip.id}"></div>
-        <button class="trip-card-del" data-id="${trip.id}" title="Remove">✕</button>
-      `;
-      list.appendChild(card);
+    const card = document.createElement('div');
+    card.className = `trip-card${isSelected ? ' selected' : ''}`;
+    card.dataset.idx = idx;
 
-      const opt = document.createElement('option');
-      opt.value       = trip.id;
-      opt.textContent = `${trip.city}, ${trip.country} (${fmtDate(trip.start_date)} – ${fmtDate(trip.end_date)})`;
-      sel.appendChild(opt);
+    const emailSent = emailLog[trip.id]
+      ? `<span class="rec-age fresh" style="margin-top:2px;">✉ Brief sent</span>` : '';
 
-      // Async: load rec cache status and show age
-      const status = await loadTripRecStatus(trip);
-      if (status && status.has_cache) {
-        const ageEl = $(`rec-age-${trip.id}`);
-        if (ageEl) {
-          const stale = status.needs_refresh;
-          ageEl.className = `rec-age ${stale ? 'stale' : 'fresh'}`;
-          ageEl.innerHTML = stale
-            ? `⚠ Recs ${status.age_days}d old`
-            : `✓ Recs updated ${status.age_days}d ago`;
-        }
+    card.innerHTML = `
+      <div class="trip-card-city">${esc(trip.city)}</div>
+      <div class="trip-card-country">${esc(trip.country)}</div>
+      <div class="trip-card-dates">${fmtDate(trip.start_date)} – ${fmtDate(trip.end_date)}</div>
+      <span class="trip-badge ${cls}">${label}</span>
+      <div class="rec-age" id="rec-age-${trip.id}"></div>
+      ${emailSent}
+      <button class="trip-card-del" data-id="${trip.id}" title="Remove">✕</button>
+    `;
+    list.appendChild(card);
+
+    // Async rec age badge
+    api('GET', `/api/recommendations/${trip.id}/status`).then(s => {
+      const el = $(`rec-age-${trip.id}`);
+      if (el && s.has_cache) {
+        el.className = `rec-age ${s.needs_refresh ? 'stale' : 'fresh'}`;
+        el.textContent = s.needs_refresh
+          ? `⚠ Recs ${s.age_days}d old`
+          : `✓ Recs ${s.age_days}d ago`;
       }
-    });
+    }).catch(() => {});
+  });
 }
 
 async function loadSchedule() {
   try {
     trips = await api('GET', '/api/schedule');
     renderTripList();
-  } catch (e) {
+  } catch {
     showToast('Could not load schedule', 'error');
   }
 }
@@ -201,12 +343,9 @@ async function saveTrip() {
   const end     = $('trip-end').value;
   const notes   = $('trip-notes').value.trim();
 
-  if (!city || !country || !start || !end) {
-    showToast('Fill in all required fields', 'error'); return;
-  }
-  if (start > end) {
-    showToast('Departure must be after arrival', 'error'); return;
-  }
+  if (!city || !country || !start || !end) { showToast('Fill in all required fields', 'error'); return; }
+  if (start > end)                          { showToast('Departure must be after arrival', 'error'); return; }
+
   try {
     $('trip-save-btn').disabled = true;
     const trip = await api('POST', '/api/schedule', { city, country, start_date: start, end_date: end, notes });
@@ -215,6 +354,8 @@ async function saveTrip() {
     closeModal('add-trip-modal');
     showToast(`${city} added ✓`, 'success');
     $('add-trip-form').reset();
+    // If no trip was selected, auto-select this one
+    if (currentTripIdx === -1) autoSelectNextTrip();
   } catch (e) {
     showToast(e.message, 'error');
   } finally {
@@ -228,14 +369,8 @@ async function deleteTrip(id) {
     trips = trips.filter(t => t.id !== id);
     renderTripList();
     showToast('Trip removed', 'success');
-    // Clear recs if this trip was selected
-    if ($('trip-selector').value === id) {
-      $('trip-selector').value = '';
-      $('get-recs-btn').disabled = true;
-      $('output-wrap').style.display = 'none';
-      $('rec-meta').style.display    = 'none';
-      $('force-refresh-btn').style.display = 'none';
-    }
+    clearOutput();
+    autoSelectNextTrip();
   } catch (e) {
     showToast(e.message, 'error');
   }
@@ -249,40 +384,25 @@ $('add-trip-btn').addEventListener('click', () => {
 $('trip-save-btn').addEventListener('click', saveTrip);
 
 $('trip-list').addEventListener('click', e => {
-  const del = e.target.closest('.trip-card-del');
-  if (del) { e.stopPropagation(); deleteTrip(del.dataset.id); }
+  const del  = e.target.closest('.trip-card-del');
+  const card = e.target.closest('.trip-card');
+  if (del)  { e.stopPropagation(); deleteTrip(del.dataset.id); return; }
+  if (card) {
+    currentTripIdx = +card.dataset.idx;
+    clearOutput();
+    renderTripList();
+    renderHero();
+    autoLoadRecs();
+  }
 });
 
 /* ══════════════════════════════════════════════════════════════
    RESTAURANT AGENT
 ══════════════════════════════════════════════════════════════ */
 
-async function onTripSelect() {
-  const id = $('trip-selector').value;
-  $('get-recs-btn').disabled = !id;
-  $('rec-meta').style.display = 'none';
-  $('force-refresh-btn').style.display = 'none';
-
-  if (!id) return;
-
-  // Show rec cache status
-  try {
-    const s = await api('GET', `/api/recommendations/${id}/status`);
-    const meta = $('rec-meta');
-    if (s.has_cache) {
-      const stale = s.needs_refresh;
-      meta.className = `rec-meta ${stale ? 'stale' : 'fresh'}`;
-      const when = stale
-        ? `⚠ Recommendations are ${s.age_days} days old — will auto-refresh`
-        : `✓ Refreshed ${s.age_days === 0 ? 'today' : s.age_days + 'd ago'}`;
-      meta.textContent = when;
-      meta.style.display = 'flex';
-      $('force-refresh-btn').style.display = '';
-    }
-  } catch { /* ignore */ }
+function currentTrip() {
+  return sortedUpcoming()[currentTripIdx] || null;
 }
-
-$('trip-selector').addEventListener('change', onTripSelect);
 
 function setStreaming(active) {
   streaming = active;
@@ -295,8 +415,8 @@ function setStreaming(active) {
 }
 
 async function getRecommendations(force = false) {
-  const id = $('trip-selector').value;
-  if (!id || streaming) return;
+  const trip = currentTrip();
+  if (!trip || streaming) return;
 
   rawMd = '';
   $('agent-error').style.display   = 'none';
@@ -308,9 +428,9 @@ async function getRecommendations(force = false) {
 
   if (activeES) { activeES.close(); activeES = null; }
 
-  const url = `/api/recommendations/stream?trip_id=${encodeURIComponent(id)}${force ? '&force=true' : ''}`;
-  const es = new EventSource(url);
-  activeES = es;
+  const url = `/api/recommendations/stream?trip_id=${encodeURIComponent(trip.id)}${force ? '&force=true' : ''}`;
+  const es  = new EventSource(url);
+  activeES  = es;
 
   es.onmessage = e => {
     const data = JSON.parse(e.data);
@@ -326,16 +446,14 @@ async function getRecommendations(force = false) {
       $('agent-output').innerHTML = marked.parse(rawMd);
       es.close(); setStreaming(false);
 
-      // Update meta row
       if (data.refreshed_at) {
-        const d = new Date(data.refreshed_at);
         const meta = $('rec-meta');
-        meta.className = 'rec-meta fresh';
+        meta.className   = 'rec-meta fresh';
         meta.textContent = `✓ Just refreshed${data.cached ? ' (from cache)' : ''}`;
         meta.style.display = 'flex';
         $('force-refresh-btn').style.display = '';
-        // Refresh sidebar age indicators
         renderTripList();
+        renderHero();
       }
       return;
     }
@@ -368,15 +486,89 @@ $('copy-btn').addEventListener('click', async () => {
   } catch { showToast('Clipboard access denied', 'error'); }
 });
 
+/* ── Send Brief button ──────────────────────────────────────── */
+$('send-brief-btn').addEventListener('click', async () => {
+  const trip = currentTrip();
+  if (!trip) return;
+  $('send-brief-btn').disabled = true;
+  $('send-brief-btn').textContent = '✉ Sending…';
+  try {
+    const r = await api('POST', `/api/trips/${trip.id}/send-brief`);
+    showToast(`Brief emailed to ${r.recipients} people ✓`, 'success');
+    emailLog = await api('GET', '/api/email-log');
+    renderHero();
+    renderTripList();
+  } catch (e) {
+    showToast(e.message, 'error');
+  } finally {
+    $('send-brief-btn').disabled = false;
+    $('send-brief-btn').textContent = '✉ Send Brief';
+  }
+});
+
+/* ══════════════════════════════════════════════════════════════
+   FAMILY EMAIL MANAGEMENT
+══════════════════════════════════════════════════════════════ */
+
+async function loadFamily() {
+  try {
+    family = await api('GET', '/api/family');
+    renderFamily();
+  } catch { /* ignore */ }
+}
+
+function renderFamily() {
+  const list = $('family-list');
+  list.innerHTML = '';
+  family.forEach((m, i) => {
+    const row = document.createElement('div');
+    row.className = 'family-item';
+    row.innerHTML = `
+      <div class="family-item-info">
+        <span class="family-item-name">${esc(m.name)}</span>
+        <span class="family-item-email">${esc(m.email)}</span>
+      </div>
+      <button class="family-item-del" data-i="${i}" title="Remove">✕</button>
+    `;
+    list.appendChild(row);
+  });
+}
+
+async function saveFamily() {
+  try {
+    family = await api('PUT', '/api/family', family);
+    renderFamily();
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+$('add-family-btn').addEventListener('click', async () => {
+  const name  = $('new-family-name').value.trim();
+  const email = $('new-family-email').value.trim();
+  if (!name || !email) { showToast('Enter name and email', 'error'); return; }
+  family.push({ name, email });
+  await saveFamily();
+  $('new-family-name').value  = '';
+  $('new-family-email').value = '';
+  showToast(`${name} added ✓`, 'success');
+});
+
+$('family-list').addEventListener('click', async e => {
+  const btn = e.target.closest('.family-item-del');
+  if (!btn) return;
+  family.splice(+btn.dataset.i, 1);
+  await saveFamily();
+});
+
 /* ══════════════════════════════════════════════════════════════
    HOME PROJECTS
 ══════════════════════════════════════════════════════════════ */
 
 function updateBudget() {
   const estimated = projects.reduce((s, p) => s + (p.estimated_cost || 0), 0);
-  const actual    = projects.reduce((s, p) => s + (p.actual_cost || 0), 0);
+  const actual    = projects.reduce((s, p) => s + (p.actual_cost    || 0), 0);
   const remaining = estimated - actual;
-
   $('budget-estimated').textContent = fmtMoney(estimated);
   $('budget-actual').textContent    = fmtMoney(actual);
   const rem = $('budget-remaining');
@@ -394,44 +586,41 @@ function renderProjects() {
         <span class="icon">🔨</span>
         No projects yet — add your first home project!
       </div>`;
-    updateBudget();
-    return;
+    updateBudget(); return;
   }
 
   const priorityOrder = { high: 0, medium: 1, low: 2 };
-  [...projects]
-    .sort((a,b) => priorityOrder[a.priority] - priorityOrder[b.priority])
-    .forEach(p => {
-      const card = document.createElement('div');
-      card.className = 'project-card';
-      card.innerHTML = `
-        <div class="project-card-header">
-          <div>
-            <div class="project-card-name">${esc(p.name)}</div>
-            ${p.description ? `<div class="project-card-desc">${esc(p.description)}</div>` : ''}
-          </div>
-          <div class="project-card-actions">
-            <button class="btn btn-secondary btn-xs proj-edit" data-id="${p.id}" title="Edit">✎ Edit</button>
-            <button class="btn btn-danger btn-xs proj-del"  data-id="${p.id}" title="Delete">✕</button>
-          </div>
+  [...projects].sort((a,b) => priorityOrder[a.priority] - priorityOrder[b.priority]).forEach(p => {
+    const card = document.createElement('div');
+    card.className = 'project-card';
+    card.innerHTML = `
+      <div class="project-card-header">
+        <div>
+          <div class="project-card-name">${esc(p.name)}</div>
+          ${p.description ? `<div class="project-card-desc">${esc(p.description)}</div>` : ''}
         </div>
-        <div class="project-card-meta">
-          <span class="priority-badge priority-${p.priority}">${
-            p.priority === 'high' ? '🔴 High' : p.priority === 'medium' ? '🟡 Medium' : '⚪ Low'
-          }</span>
-          <span class="status-badge ${p.status === 'completed' ? 'done' : ''}">${
-            p.status === 'planning' ? 'Planning' : p.status === 'in_progress' ? 'In Progress' : '✓ Completed'
-          }</span>
+        <div class="project-card-actions">
+          <button class="btn btn-secondary btn-xs proj-edit" data-id="${p.id}">✎ Edit</button>
+          <button class="btn btn-danger btn-xs proj-del"  data-id="${p.id}">✕</button>
         </div>
-        <div class="cost-display" style="margin-top:8px;">
-          <span>Est: <strong>${fmtMoney(p.estimated_cost)}</strong></span>
-          ${p.actual_cost !== null && p.actual_cost !== undefined
-            ? `<span>•</span><span>Actual: <strong>${fmtMoney(p.actual_cost)}</strong></span>` : ''}
-        </div>
-        ${p.notes ? `<div style="margin-top:7px;font-size:.76rem;color:var(--t3);">${esc(p.notes)}</div>` : ''}
-      `;
-      list.appendChild(card);
-    });
+      </div>
+      <div class="project-card-meta">
+        <span class="priority-badge priority-${p.priority}">${
+          p.priority === 'high' ? '🔴 High' : p.priority === 'medium' ? '🟡 Medium' : '⚪ Low'
+        }</span>
+        <span class="status-badge ${p.status === 'completed' ? 'done' : ''}">${
+          p.status === 'planning' ? 'Planning' : p.status === 'in_progress' ? 'In Progress' : '✓ Completed'
+        }</span>
+      </div>
+      <div class="cost-display" style="margin-top:8px;">
+        <span>Est: <strong>${fmtMoney(p.estimated_cost)}</strong></span>
+        ${p.actual_cost !== null && p.actual_cost !== undefined
+          ? `<span>•</span><span>Actual: <strong>${fmtMoney(p.actual_cost)}</strong></span>` : ''}
+      </div>
+      ${p.notes ? `<div style="margin-top:7px;font-size:.76rem;color:var(--t3);">${esc(p.notes)}</div>` : ''}
+    `;
+    list.appendChild(card);
+  });
 
   updateBudget();
 }
@@ -510,11 +699,8 @@ $('project-save-btn').addEventListener('click', saveProject);
 $('project-list').addEventListener('click', e => {
   const edit = e.target.closest('.proj-edit');
   const del  = e.target.closest('.proj-del');
-  if (edit) {
-    const p = projects.find(x => x.id === edit.dataset.id);
-    if (p) openProjectModal(p);
-  }
-  if (del) deleteProject(del.dataset.id);
+  if (edit) { const p = projects.find(x => x.id === edit.dataset.id); if (p) openProjectModal(p); }
+  if (del)  deleteProject(del.dataset.id);
 });
 
 /* ══════════════════════════════════════════════════════════════
@@ -526,13 +712,13 @@ $('google-disconnect-btn').addEventListener('click', async () => {
     await api('DELETE', '/auth/google');
     showToast('Google disconnected', 'info');
     checkHealth();
-  } catch (e) {
-    showToast(e.message, 'error');
-  }
+    renderHero();
+  } catch (e) { showToast(e.message, 'error'); }
 });
 
-// Gmail Import
 $('gmail-import-btn').addEventListener('click', async () => {
+  $('import-modal-title').textContent = 'Import Trips from Gmail';
+  $('import-desc').textContent        = 'Scanning your last 6 months of email for travel booking confirmations…';
   $('import-loading').style.display   = '';
   $('import-list-wrap').style.display = 'none';
   $('import-add-all-btn').style.display = 'none';
@@ -540,37 +726,17 @@ $('gmail-import-btn').addEventListener('click', async () => {
   openModal('import-modal');
 
   try {
-    const data = await api('POST', '/api/gmail/import');
-    const trips_found = data.trips || [];
+    const data       = await api('POST', '/api/gmail/import');
+    const found      = data.trips || [];
     $('import-loading').style.display = 'none';
 
-    if (!trips_found.length) {
-      $('import-list-wrap').innerHTML = '<p style="font-size:.85rem;color:var(--t2);">No travel booking confirmations found in the last 6 months.</p>';
+    if (!found.length) {
+      $('import-list-wrap').innerHTML = '<p style="font-size:.85rem;color:var(--t2);">No travel confirmations found in the last 6 months.</p>';
       $('import-list-wrap').style.display = '';
       return;
     }
-
-    importCandidates = trips_found;
-    const list = $('import-list');
-    list.innerHTML = '';
-    trips_found.forEach((t, i) => {
-      const item = document.createElement('div');
-      item.className = 'import-item';
-      item.innerHTML = `
-        <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;flex:1;">
-          <input type="checkbox" checked data-i="${i}" style="margin-top:3px;" />
-          <div class="import-item-info">
-            <div class="import-item-city">${esc(t.city)}, ${esc(t.country)}</div>
-            <div class="import-item-dates">${fmtDate(t.start_date)} – ${fmtDate(t.end_date)}</div>
-            ${t.notes ? `<div class="import-item-note">${esc(t.notes)}</div>` : ''}
-          </div>
-        </label>
-      `;
-      list.appendChild(item);
-    });
-
-    $('import-list-wrap').style.display  = '';
-    $('import-add-all-btn').style.display = '';
+    importCandidates = found;
+    renderImportList(found);
   } catch (e) {
     $('import-loading').style.display = 'none';
     $('import-list-wrap').innerHTML = `<div class="agent-error"><strong>Error</strong> ${esc(e.message)}</div>`;
@@ -578,20 +744,66 @@ $('gmail-import-btn').addEventListener('click', async () => {
   }
 });
 
+$('calendar-sync-btn').addEventListener('click', async () => {
+  $('import-modal-title').textContent = 'Sync from Google Calendar';
+  $('import-desc').textContent        = 'Looking for upcoming travel events in your calendar…';
+  $('import-loading').style.display   = '';
+  $('import-list-wrap').style.display = 'none';
+  $('import-add-all-btn').style.display = 'none';
+  importCandidates = [];
+  openModal('import-modal');
+
+  try {
+    const data  = await api('GET', '/api/calendar/events');
+    const evs   = data.events || [];
+    $('import-loading').style.display = 'none';
+
+    if (!evs.length) {
+      $('import-list-wrap').innerHTML = '<p style="font-size:.85rem;color:var(--t2);">No upcoming travel events found in Calendar.</p>';
+      $('import-list-wrap').style.display = '';
+      return;
+    }
+    importCandidates = evs;
+    renderImportList(evs);
+  } catch (e) {
+    $('import-loading').style.display = 'none';
+    $('import-list-wrap').innerHTML = `<div class="agent-error"><strong>Error</strong> ${esc(e.message)}</div>`;
+    $('import-list-wrap').style.display = '';
+  }
+});
+
+function renderImportList(items) {
+  const list = $('import-list');
+  list.innerHTML = '';
+  items.forEach((t, i) => {
+    const item = document.createElement('div');
+    item.className = 'import-item';
+    item.innerHTML = `
+      <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;flex:1;">
+        <input type="checkbox" checked data-i="${i}" style="margin-top:3px;" />
+        <div class="import-item-info">
+          <div class="import-item-city">${esc(t.city)}, ${esc(t.country)}</div>
+          <div class="import-item-dates">${fmtDate(t.start_date)} – ${fmtDate(t.end_date)}</div>
+          ${t.notes ? `<div class="import-item-note">${esc(t.notes)}</div>` : ''}
+        </div>
+      </label>
+    `;
+    list.appendChild(item);
+  });
+  $('import-list-wrap').style.display   = '';
+  $('import-add-all-btn').style.display = '';
+}
+
 $('import-add-all-btn').addEventListener('click', async () => {
   const checked = [...$('import-list').querySelectorAll('input[type=checkbox]:checked')]
     .map(cb => importCandidates[+cb.dataset.i]);
-
   if (!checked.length) { showToast('No trips selected', 'error'); return; }
 
   $('import-add-all-btn').disabled = true;
   let added = 0;
   for (const t of checked) {
     try {
-      const existing = trips.find(x =>
-        x.city.toLowerCase() === t.city.toLowerCase() &&
-        x.start_date === t.start_date
-      );
+      const existing = trips.find(x => x.city.toLowerCase() === t.city.toLowerCase() && x.start_date === t.start_date);
       if (existing) continue;
       const trip = await api('POST', '/api/schedule', t);
       trips.push(trip);
@@ -602,46 +814,7 @@ $('import-add-all-btn').addEventListener('click', async () => {
   closeModal('import-modal');
   showToast(`${added} trip${added !== 1 ? 's' : ''} added ✓`, 'success');
   $('import-add-all-btn').disabled = false;
-});
-
-// Calendar Sync
-$('calendar-sync-btn').addEventListener('click', async () => {
-  showToast('Scanning Google Calendar…', 'info');
-  try {
-    const data  = await api('GET', '/api/calendar/events');
-    const evs   = data.events || [];
-    if (!evs.length) {
-      showToast('No upcoming travel events found in Calendar', 'info'); return;
-    }
-
-    // Reuse import modal with calendar events
-    importCandidates = evs;
-    $('import-loading').style.display    = 'none';
-    $('import-add-all-btn').style.display = '';
-
-    const list = $('import-list');
-    list.innerHTML = '';
-    evs.forEach((t, i) => {
-      const item = document.createElement('div');
-      item.className = 'import-item';
-      item.innerHTML = `
-        <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;flex:1;">
-          <input type="checkbox" checked data-i="${i}" style="margin-top:3px;" />
-          <div class="import-item-info">
-            <div class="import-item-city">${esc(t.city)}, ${esc(t.country)}</div>
-            <div class="import-item-dates">${fmtDate(t.start_date)} – ${fmtDate(t.end_date)}</div>
-            ${t.notes ? `<div class="import-item-note">${esc(t.notes)}</div>` : ''}
-          </div>
-        </label>
-      `;
-      list.appendChild(item);
-    });
-
-    $('import-list-wrap').style.display = '';
-    openModal('import-modal');
-  } catch (e) {
-    showToast(e.message, 'error');
-  }
+  if (currentTripIdx === -1) autoSelectNextTrip();
 });
 
 /* ── URL param handling (post-OAuth redirect) ───────────────── */
@@ -651,6 +824,7 @@ function handleUrlParams() {
     showToast('Google connected ✓', 'success');
     history.replaceState({}, '', '/');
     checkHealth();
+    renderHero();
   }
   if (params.get('error') === 'no_credentials') {
     showToast('credentials.json not found — see setup instructions', 'error');
@@ -663,5 +837,9 @@ function handleUrlParams() {
 (async () => {
   handleUrlParams();
   await checkHealth();
-  await Promise.all([loadSchedule(), loadProjects()]);
+  [emailLog] = await Promise.all([
+    api('GET', '/api/email-log').catch(() => ({})),
+  ]);
+  await Promise.all([loadSchedule(), loadProjects(), loadFamily()]);
+  autoSelectNextTrip();
 })();

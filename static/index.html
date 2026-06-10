@@ -38,7 +38,6 @@
       <div class="google-box-title">
         <span>📧</span> Gmail &amp; Calendar
       </div>
-      <!-- Not connected state (default) -->
       <div id="google-disconnected">
         <p>Connect to auto-import trips from booking confirmations and calendar events.</p>
         <a href="/auth/google" class="btn btn-google btn-sm" id="connect-google-btn">
@@ -51,11 +50,9 @@
           Sign in with Google
         </a>
         <div style="margin-top:8px; font-size:.71rem; color:var(--t3); line-height:1.5;">
-          Requires <code>credentials.json</code> from Google Cloud Console —
-          see setup instructions below.
+          Requires <code>credentials.json</code> from Google Cloud Console.
         </div>
       </div>
-      <!-- Connected state -->
       <div id="google-connected" style="display:none;">
         <div class="google-connected-row">
           <span>✅</span> Google connected
@@ -78,13 +75,27 @@
 
     <!-- Travel schedule list -->
     <div class="section-label">Travel Schedule</div>
-    <div class="trip-list" id="trip-list">
-      <!-- Populated by JS -->
-    </div>
+    <div class="trip-list" id="trip-list"></div>
     <div class="divider" style="margin:8px 0;"></div>
     <button class="btn btn-ghost btn-sm" id="add-trip-btn">＋ Add Trip</button>
 
-    <!-- Setup instructions (collapsed) -->
+    <div class="divider"></div>
+
+    <!-- Pre-trip email family list -->
+    <div class="section-label">Pre-trip Emails</div>
+    <div class="family-box">
+      <p style="font-size:.74rem;color:var(--t2);margin-bottom:10px;line-height:1.5;">
+        7 days before each trip we email weather, carry-on packing list &amp; restaurant picks to:
+      </p>
+      <div id="family-list" class="family-list"></div>
+      <div class="family-add-row">
+        <input type="text"  id="new-family-name"  placeholder="Name" />
+        <input type="email" id="new-family-email" placeholder="email@example.com" />
+        <button class="btn btn-primary btn-xs" id="add-family-btn">+</button>
+      </div>
+    </div>
+
+    <!-- Google setup instructions (shown when credentials.json is missing) -->
     <div id="google-setup-section" style="display:none;">
       <div class="divider"></div>
       <div class="section-label">Google Setup</div>
@@ -93,9 +104,9 @@
         1. Go to <a href="https://console.cloud.google.com" target="_blank" style="color:var(--accent);">console.cloud.google.com</a><br>
         2. Create a project → enable Gmail API + Calendar API<br>
         3. Create OAuth 2.0 credentials (Web App type)<br>
-        4. Add <code>http://localhost:8000/auth/google/callback</code> as redirect URI<br>
+        4. Add your callback URL as redirect URI<br>
         5. Download <code>credentials.json</code> → place in project root<br>
-        6. Restart the server, then click "Sign in with Google"
+        6. Click "Sign in with Google" above
       </div>
     </div>
 
@@ -113,33 +124,42 @@
     <!-- ── TRAVEL TAB ──────────────────────────────────────── -->
     <div class="tab-panel active" id="tab-travel">
 
-      <!-- Restaurant Recommendations widget -->
+      <!-- Trip Hero + Restaurant Recommendations -->
       <div class="widget">
-        <div class="widget-header">
-          <span class="widget-title">🍽️ Restaurant Recommendations</span>
-          <span class="badge">AI Agent • Yelp + Google + OpenTable</span>
-        </div>
-        <div class="widget-body">
-          <p style="font-size:.82rem;color:var(--t2);margin-bottom:14px;">
-            Healthy &amp; vegetarian-friendly picks for you and your son —
-            refreshed weekly per destination.
-          </p>
+        <!-- Hero destination header -->
+        <div class="trip-hero" id="trip-hero">
+          <div class="hero-nav">
+            <button class="btn btn-ghost btn-xs hero-nav-btn" id="prev-trip-btn" disabled>&#8592;</button>
+            <div class="hero-center">
+              <div class="hero-city" id="hero-city">Your Next Trip</div>
+              <div class="hero-country" id="hero-country">Add trips in the sidebar to get started</div>
+            </div>
+            <button class="btn btn-ghost btn-xs hero-nav-btn" id="next-trip-btn" disabled>&#8594;</button>
+          </div>
 
-          <div class="agent-controls">
-            <select class="trip-selector" id="trip-selector">
-              <option value="">— Choose a trip —</option>
-            </select>
+          <div class="hero-info" id="hero-info" style="display:none;">
+            <span class="hero-dates" id="hero-dates"></span>
+            <span id="hero-countdown"></span>
+            <span id="hero-rec-badge"></span>
+            <span id="hero-email-badge"></span>
+          </div>
+
+          <div class="hero-actions" id="hero-actions" style="display:none;">
             <button class="btn btn-primary" id="get-recs-btn" disabled>
               <span id="btn-icon">🔍</span>
               <span id="btn-label">Find Restaurants</span>
             </button>
-            <button class="btn btn-secondary btn-sm" id="force-refresh-btn" style="display:none;" title="Force a fresh search">
+            <button class="btn btn-secondary btn-sm" id="force-refresh-btn" style="display:none;" title="Force fresh search">
               ↺ Refresh
             </button>
+            <button class="btn btn-secondary btn-sm" id="send-brief-btn" style="display:none;" title="Email weather + packing + restaurants to family now">
+              ✉ Send Brief
+            </button>
+            <span class="rec-meta" id="rec-meta" style="display:none;"></span>
           </div>
+        </div>
 
-          <div class="rec-meta" id="rec-meta" style="display:none;"></div>
-
+        <div class="widget-body">
           <div class="agent-output-wrap" id="output-wrap" style="display:none;">
             <div class="output-header">
               <div class="thinking-dots" id="thinking-dots">
@@ -151,12 +171,11 @@
             </div>
             <div class="agent-output empty" id="agent-output">Waiting…</div>
           </div>
-
           <div id="agent-error" style="display:none;"></div>
         </div>
       </div>
 
-      <!-- Placeholder for future travel widget -->
+      <!-- Add a Widget placeholder -->
       <div class="widget widget-placeholder">
         <div class="placeholder-inner">
           <div class="placeholder-icon">＋</div>
@@ -177,7 +196,6 @@
         </div>
         <div class="widget-body">
 
-          <!-- Budget summary cards -->
           <div class="budget-summary" id="budget-summary">
             <div class="budget-card">
               <div class="budget-card-label">Total Estimated</div>
@@ -193,12 +211,8 @@
             </div>
           </div>
 
-          <!-- Projects list -->
-          <div class="project-list" id="project-list">
-            <!-- Populated by JS -->
-          </div>
+          <div class="project-list" id="project-list"></div>
 
-          <!-- AI Estimator placeholder -->
           <div class="ai-estimator-slot" style="margin-top:18px;">
             <div class="slot-icon">🤖</div>
             <div class="slot-label">AI Cost Estimator</div>
@@ -310,22 +324,22 @@
   </div>
 </div>
 
-<!-- ── Gmail Import Modal ──────────────────────────────────── -->
+<!-- ── Gmail / Calendar Import Modal ──────────────────────── -->
 <div class="modal-backdrop" id="import-modal">
   <div class="modal">
     <div class="modal-header">
-      <span class="modal-title">Import Trips from Gmail</span>
+      <span class="modal-title" id="import-modal-title">Import Trips from Gmail</span>
       <button class="modal-close" data-close="import-modal">✕</button>
     </div>
     <div id="import-content">
-      <p style="font-size:.85rem;color:var(--t2);margin-bottom:14px;">
+      <p style="font-size:.85rem;color:var(--t2);margin-bottom:14px;" id="import-desc">
         Scanning your last 6 months of email for travel booking confirmations…
       </p>
       <div style="text-align:center;padding:20px;color:var(--t2);font-size:.85rem;" id="import-loading">
         <div class="thinking-dots active" style="justify-content:center;margin-bottom:10px;">
           <span></span><span></span><span></span>
         </div>
-        Searching Gmail…
+        Searching…
       </div>
       <div id="import-list-wrap" style="display:none;">
         <div class="import-list" id="import-list"></div>

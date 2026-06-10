@@ -434,6 +434,91 @@ body {
 .ai-estimator-slot .slot-label { font-size: .88rem; font-weight: 600; color: var(--purple); }
 .ai-estimator-slot .slot-sub   { font-size: .78rem; color: var(--t3); margin-top: 4px; }
 
+/* ── Trip Hero ────────────────────────────────────────────── */
+.trip-hero {
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--border-s);
+  background: linear-gradient(180deg, rgba(31,111,235,.06) 0%, transparent 100%);
+}
+
+.hero-nav {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
+}
+
+.hero-nav-btn {
+  flex-shrink: 0; font-size: 1rem; padding: 4px 10px;
+}
+
+.hero-center { flex: 1; text-align: center; }
+
+.hero-city {
+  font-size: 1.6rem; font-weight: 700; color: var(--t0);
+  letter-spacing: -.5px; line-height: 1.2;
+}
+
+.hero-country {
+  font-size: .9rem; color: var(--t2); margin-top: 2px;
+}
+
+.hero-info {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 8px; margin-bottom: 12px;
+}
+
+.hero-dates {
+  font-size: .8rem; color: var(--t2);
+}
+
+.hero-pill {
+  font-size: .66rem; font-weight: 700; letter-spacing: .3px;
+  padding: 2px 9px; border-radius: 99px;
+  display: inline-block;
+}
+
+.pill-upcoming { background: rgba(88,166,255,.12);  color: var(--accent); border: 1px solid rgba(88,166,255,.3); }
+.pill-now      { background: rgba(63,185,80,.15);   color: var(--green);  border: 1px solid rgba(63,185,80,.3); }
+.pill-past     { background: rgba(110,118,129,.1);  color: var(--t3);     border: 1px solid var(--border-s); }
+.pill-fresh    { background: rgba(63,185,80,.12);   color: var(--green);  border: 1px solid rgba(63,185,80,.3); }
+.pill-stale    { background: rgba(210,153,34,.12);  color: var(--amber);  border: 1px solid rgba(210,153,34,.3); }
+.pill-email    { background: rgba(188,140,255,.12); color: var(--purple); border: 1px solid rgba(188,140,255,.3); }
+.pill-email-soon { background: rgba(88,166,255,.1); color: var(--accent); border: 1px solid rgba(88,166,255,.2); }
+
+.hero-actions {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+}
+
+/* ── Family email box ─────────────────────────────────────── */
+.family-box {
+  background: var(--bg-2); border: 1px solid var(--border-s);
+  border-radius: var(--r-md); padding: 12px;
+}
+
+.family-list { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; }
+
+.family-item {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--bg-3); border-radius: var(--r-sm);
+  padding: 6px 9px; gap: 8px;
+}
+
+.family-item-info { flex: 1; min-width: 0; }
+.family-item-name  { font-size: .78rem; font-weight: 600; color: var(--t1); display: block; }
+.family-item-email { font-size: .7rem; color: var(--t3); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.family-item-del {
+  background: none; border: none; cursor: pointer;
+  color: var(--t3); font-size: 12px; padding: 2px 5px;
+  border-radius: var(--r-sm); flex-shrink: 0;
+  transition: color .15s, background .15s;
+}
+.family-item-del:hover { color: var(--red); background: rgba(248,81,73,.1); }
+
+.family-add-row {
+  display: grid; grid-template-columns: 1fr 2fr auto; gap: 5px;
+  align-items: center;
+}
+.family-add-row input { font-size: .76rem; padding: 5px 8px; }
+
 /* ── Placeholder widget ───────────────────────────────────── */
 .widget-placeholder {
   border-style: dashed; border-color: var(--border-s);

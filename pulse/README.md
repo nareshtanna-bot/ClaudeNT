@@ -38,3 +38,33 @@ ALPACA_API_SECRET_KEY=...
 
 When present, quotes upgrade to Alpaca real-time; when absent, Yahoo last-close is
 used and clearly labeled in the output.
+
+---
+
+# Pulse — date accuracy fix
+
+Evening/nightly briefs were rendering the header **one day ahead** (e.g., a
+brief generated the evening of July 3 read "July 4"). Root cause: the header
+was stamped from **UTC**. The evening/nightly run fires ~9 PM ET = ~1 AM UTC
+the next day, so a UTC date label rolls forward. The 7 AM ET morning run
+(~11 AM UTC) happened to land on the right day, which is why only the
+evening/nightly briefs were wrong.
+
+**Fix:** `pulse_dates.py` — always stamp the header in `America/New_York`.
+
+```python
+from pulse_dates import header_date, sanity_check
+subject = f"☀️ Morning Pulse — {header_date()}"   # -> "Saturday, July 4, 2026"
+warn = sanity_check()   # non-empty if a UTC stamp would disagree with ET
+```
+
+`python3 pulse/pulse_dates.py` self-tests and prints the guard status.
+
+---
+
+# Course content
+
+`cfo_filing_crash_course.md` — a ranked crash course on every SEC filing a
+biotech CFO encounters (hugest → lowest probability), with gene-editing peer
+examples (DTIL/PRME/BEAM/EDIT/CRSP/NTLA). Rendered into a nightly email draft
+to supplement the DTIL 10-K learnings.

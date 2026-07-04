@@ -62,6 +62,29 @@ warn = sanity_check()   # non-empty if a UTC stamp would disagree with ET
 
 ---
 
+# Streamlined dispatch — exactly 2 emails/day
+
+`dispatch.py` collapses the old fragmented schedule (up to 5 emails/day:
+Morning Brief, Evening Brief, TMC Daily, TMC Trip Scout, TMC Cowork nightly)
+into **two jobs** — one Morning Pulse, one Evening Pulse — each composing the
+former standalone emails as internal *sections*.
+
+| Job | Schedule (ET) | Folds in |
+|-----|---------------|----------|
+| ☀️ Morning Pulse | 7:00 AM daily | Morning Brief · TMC Daily (sports+trips) · Trip Scout (Mon) · markets/AI-stack |
+| 🌙 Evening Pulse | 8:30 PM daily | Evening Brief · TMC Cowork nightly |
+
+One dispatch per slot fans out to the data collectors and fans **in** to a
+single email. Dates come from `pulse_dates` (ET), markets from `market_data`
+(keyless). To apply on the live scheduler: keep only these two cron jobs and
+retire the other three.
+
+```
+python3 pulse/dispatch.py --list      # the 2 jobs + what each retires
+python3 pulse/dispatch.py morning     # compose the morning email
+python3 pulse/dispatch.py evening     # compose the evening email
+```
+
 # Course content
 
 `cfo_filing_crash_course.md` — a ranked crash course on every SEC filing a

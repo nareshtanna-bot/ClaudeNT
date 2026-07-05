@@ -29,6 +29,7 @@ import sys
 
 from pulse_dates import header_date, now_et
 import market_data
+import cfo_nuggets
 
 # ── The two jobs. This is the whole schedule. ──────────────────────────────
 JOBS = {
@@ -63,6 +64,7 @@ JOBS = {
             "actions",         # 📋 bills / decisions
             "health",          # 🧠 protocol
             "systems",         # 🌙 nightly systems + inbox   (was: TMC Cowork nightly)
+            "cfo_nugget",      # 🎓 one CFO thing to learn (rotates daily)   [LIVE]
         ],
     },
 }
@@ -103,6 +105,8 @@ def compose(job_key: str) -> str:
     for name in job["sections"]:
         if name == "wealth":
             out.append(_live_wealth())
+        elif name == "cfo_nugget":
+            out.append(cfo_nuggets.nugget_block())
         else:
             src = SOURCES.get(name, "Cowork runtime")
             out.append(f"[§ {name}]  ← {src}")
